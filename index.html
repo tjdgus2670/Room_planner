@@ -964,18 +964,27 @@
   let snap = true;
   let items = []; // {id, key, name, x, y, w, d, rot, color}
   let selectedId = null;
-  let idCounter = 1;
+  function genId(){
+    // 시간값 + 무작위값 조합이라, 새로고침/재로그인해서 예전 ID들이 불러와져도
+    // 절대 겹치지 않아요 (예전엔 1부터 다시 세는 카운터라 겹치는 문제가 있었어요).
+    return 'it_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
+  }
   let mode = '2d';
 
   // ---------- undo (Ctrl+Z) ----------
   let history = [];
   const MAX_HISTORY = 50;
+  let emptyUndoNotified = false;
   function pushHistory(){
     history.push(JSON.stringify({ room, items }));
     if(history.length>MAX_HISTORY) history.shift();
+    emptyUndoNotified = false;
   }
   function undo(){
-    if(history.length===0){ showToast('더 되돌릴 게 없어요.', 'info'); return; }
+    if(history.length===0){
+      if(!emptyUndoNotified){ showToast('더 되돌릴 게 없어요.', 'info'); emptyUndoNotified = true; }
+      return;
+    }
     const prev = JSON.parse(history.pop());
     room = prev.room;
     items = prev.items;
@@ -1037,7 +1046,7 @@
 
   function addItem(f){
     pushHistory();
-    const id = 'it'+(idCounter++);
+    const id = genId();
     const spot = findFreeSpot(f.w, f.d);
     items.push({ id, key:f.key, name:f.name, x:spot.x, y:spot.y, w:f.w, d:f.d, rot:0, color:f.color });
     selectedId = id;
@@ -1098,12 +1107,12 @@
     // 3m × 3.5m를 기준값으로 잡아두었어요. 방 크기 입력칸이나 크기 조절 핸들로
     // 실제 치수에 맞게 바로 고칠 수 있어요.
     const doorF = TYPE_MAP['door'];
-    items.push({ id:'it'+(idCounter++), key:'door', name:doorF.name, x:room.w-10, y:20, w:90, d:10, rot:90, color:doorF.color });
+    items.push({ id:genId(), key:'door', name:doorF.name, x:room.w-10, y:20, w:90, d:10, rot:90, color:doorF.color });
     const bwF = TYPE_MAP['built_wardrobe'];
-    items.push({ id:'it'+(idCounter++), key:'built_wardrobe', name:bwF.name, x:0, y:0, w:220, d:65, rot:0, color:bwF.color });
+    items.push({ id:genId(), key:'built_wardrobe', name:bwF.name, x:0, y:0, w:220, d:65, rot:0, color:bwF.color });
     const winF = TYPE_MAP['window'];
     const winW = Math.round(room.w*0.6/10)*10;
-    items.push({ id:'it'+(idCounter++), key:'window', name:winF.name, x:Math.round((room.w-winW)/2/10)*10, y:room.d-8, w:winW, d:8, rot:0, color:winF.color });
+    items.push({ id:genId(), key:'window', name:winF.name, x:Math.round((room.w-winW)/2/10)*10, y:room.d-8, w:winW, d:8, rot:0, color:winF.color });
   }
 
   async function loadFromServer(manual){
