@@ -843,6 +843,12 @@
       return rectsOverlap(xCm, yCm, effW, effH, other.x, other.y, obox.w, obox.h, 0.5);
     });
   }
+  function wallMargin(it){
+    // 문/창문은 벽 두께만큼 방 경계 바깥으로 걸쳐도 되게 허용 (도면처럼 벽에 박힌 느낌).
+    // 그 외 일반 가구는 지금처럼 방 안쪽으로만 제한.
+    if(it.key==='door' || it.key==='window') return Math.min(it.w, it.d);
+    return 0;
+  }
 
   // ---------- 2D icon SVGs (top-down) ----------
   function iconSVG(key, w, d, color, flip){
@@ -1106,13 +1112,14 @@
     // 힐스테이트 푸르지오 주안 112A, 현관에서 가장 가까운 방 — 공식 평면도 수치를 찾지 못해
     // 3m × 3.5m를 기준값으로 잡아두었어요. 방 크기 입력칸이나 크기 조절 핸들로
     // 실제 치수에 맞게 바로 고칠 수 있어요.
+    // 문/창문은 벽 바깥쪽으로 걸치게 둬서 도면처럼 보이게 해요 (실내 바닥 공간을 안 먹게).
     const doorF = TYPE_MAP['door'];
-    items.push({ id:genId(), key:'door', name:doorF.name, x:room.w-10, y:20, w:90, d:10, rot:90, color:doorF.color });
+    items.push({ id:genId(), key:'door', name:doorF.name, x:room.w, y:20, w:90, d:10, rot:90, color:doorF.color });
     const bwF = TYPE_MAP['built_wardrobe'];
     items.push({ id:genId(), key:'built_wardrobe', name:bwF.name, x:0, y:0, w:220, d:65, rot:0, color:bwF.color });
     const winF = TYPE_MAP['window'];
     const winW = Math.round(room.w*0.6/10)*10;
-    items.push({ id:genId(), key:'window', name:winF.name, x:Math.round((room.w-winW)/2/10)*10, y:room.d-8, w:winW, d:8, rot:0, color:winF.color });
+    items.push({ id:genId(), key:'window', name:winF.name, x:Math.round((room.w-winW)/2/10)*10, y:room.d, w:winW, d:8, rot:0, color:winF.color });
   }
 
   async function loadFromServer(manual){
@@ -1319,9 +1326,10 @@
     const cxCm = it.x + oldBox.w/2, cyCm = it.y + oldBox.h/2;
     it.rot = ((newRot%360)+360)%360;
     const newBox = getAABB(it.w, it.d, it.rot);
+    const m = wallMargin(it);
     let nx = cxCm - newBox.w/2, ny = cyCm - newBox.h/2;
-    nx = clamp(nx, 0, Math.max(0, room.w-newBox.w));
-    ny = clamp(ny, 0, Math.max(0, room.d-newBox.h));
+    nx = clamp(nx, -m, Math.max(-m, room.w-newBox.w+m));
+    ny = clamp(ny, -m, Math.max(-m, room.d-newBox.h+m));
     it.x = nx; it.y = ny;
   }
 
@@ -1453,8 +1461,9 @@
     let effW = resizeCtx.startEffW + dW;
     let effH = resizeCtx.startEffH + dH;
     if(snap){ effW = Math.round(effW/10)*10; effH = Math.round(effH/10)*10; }
-    effW = clamp(effW, 20, room.w - it.x);
-    effH = clamp(effH, 20, room.d - it.y);
+    const m = wallMargin(it);
+    effW = clamp(effW, 20, room.w - it.x + m);
+    effH = clamp(effH, 20, room.d - it.y + m);
     if(collidesWithOthers(it, it.x, it.y, effW, effH)) return; // 다른 가구와 겹치면 그 이상은 안 커짐
     if(resizeCtx.rot0){ it.w = effW; it.d = effH; }
     else { it.d = effW; it.w = effH; }
@@ -1515,8 +1524,9 @@
     let yCm = (e.clientY - roomRect.top - dragCtx.offsetY) / PPCM;
     if(snap){ xCm = Math.round(xCm/10)*10; yCm = Math.round(yCm/10)*10; }
     const box = getAABB(it.w, it.d, it.rot);
-    xCm = clamp(xCm, 0, room.w - box.w);
-    yCm = clamp(yCm, 0, room.d - box.h);
+    const m = wallMargin(it);
+    xCm = clamp(xCm, -m, room.w - box.w + m);
+    yCm = clamp(yCm, -m, room.d - box.h + m);
 
     if(!collidesWithOthers(it, xCm, yCm, box.w, box.h)){
       it.x = xCm; it.y = yCm;
@@ -1531,11 +1541,12 @@
 
   function wallSnapTarget(it){
     const box = getAABB(it.w, it.d, it.rot);
+    const outside = (it.key==='door' || it.key==='window');
     let nx = it.x, ny = it.y, changed = false;
-    if(Math.abs(nx) < WALL_MAGNET_CM){ nx = 0; changed = true; }
-    else if(Math.abs((nx+box.w)-room.w) < WALL_MAGNET_CM){ nx = room.w-box.w; changed = true; }
-    if(Math.abs(ny) < WALL_MAGNET_CM){ ny = 0; changed = true; }
-    else if(Math.abs((ny+box.h)-room.d) < WALL_MAGNET_CM){ ny = room.d-box.h; changed = true; }
+    if(Math.abs(nx) < WALL_MAGNET_CM){ nx = outside ? -box.w : 0; changed = true; }
+    else if(Math.abs((nx+box.w)-room.w) < WALL_MAGNET_CM){ nx = outside ? room.w : room.w-box.w; changed = true; }
+    if(Math.abs(ny) < WALL_MAGNET_CM){ ny = outside ? -box.h : 0; changed = true; }
+    else if(Math.abs((ny+box.h)-room.d) < WALL_MAGNET_CM){ ny = outside ? room.d : room.d-box.h; changed = true; }
     return changed ? {x:nx,y:ny} : null;
   }
 
