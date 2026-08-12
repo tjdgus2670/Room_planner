@@ -1178,14 +1178,7 @@
     Array.from(roomEl.querySelectorAll('.item, .toolbar-float, .resize-handle, .size-badge, .rotate-handle, .rotate-stem')).forEach(el=>el.remove());
     emptyHint.style.display = items.length===0 ? 'flex' : 'none';
 
-    // 큰 가구를 먼저 그리고 작은 가구를 나중에(위에) 그려서, 겹쳤을 때 작은 걸(문 등)
-    // 클릭하기 쉽게 해요. 선택된 가구는 항상 맨 위로.
-    const drawOrder = [...items].sort((a,b)=>{
-      if(a.id===selectedId) return 1;
-      if(b.id===selectedId) return -1;
-      return (b.w*b.d) - (a.w*a.d);
-    });
-    drawOrder.forEach(it=>{
+    items.forEach(it=>{
       const box = getAABB(it.w, it.d, it.rot);
       const effW = box.w, effH = box.h;
 
@@ -1210,7 +1203,9 @@
       label.textContent = it.name;
       el.appendChild(label);
 
-      el.addEventListener('pointerdown', onDragStart);
+      // 클릭 판정은 이 개별 리스너가 아니라 roomEl의 좌표 기반 판정(hitTestItem)이 담당해요 —
+      // 화면상 그려진 순서(z-order)에 기대지 않고, 좌표가 겹칠 때 항상 "제일 작은 가구"를
+      // 정확히 골라주기 위해서예요.
       roomEl.appendChild(el);
     });
 
@@ -1487,13 +1482,11 @@
 
   let dragCtx = null;
   const WALL_MAGNET_CM = 14;
-  function onDragStart(e){
-    const id = e.currentTarget.dataset.id;
-    selectedId = id;
-    const it = items.find(i=>i.id===id);
+  function onDragStart(e, it){
+    selectedId = it.id;
     const roomRect = roomEl.getBoundingClientRect();
     dragCtx = {
-      id,
+      id: it.id,
       offsetX: e.clientX - roomRect.left - it.x*PPCM,
       offsetY: e.clientY - roomRect.top - it.y*PPCM,
       historyPushed: false // 실제로 움직이기 시작할 때만 undo에 기록 (그냥 클릭은 제외)
@@ -1565,8 +1558,29 @@
     if(mode==='3d') build3D();
   }
 
+  function hitTestItem(xCm, yCm){
+    // 클릭 좌표를 포함하는 가구들 중, 화면상 그려진 순서가 아니라
+    // 넓이가 가장 작은 것을 고른다 (문처럼 작은 게 큰 가구 옆에 있어도 정확히 잡히게).
+    let best = null, bestArea = Infinity;
+    for(const it of items){
+      const box = getAABB(it.w, it.d, it.rot);
+      if(xCm>=it.x && xCm<=it.x+box.w && yCm>=it.y && yCm<=it.y+box.h){
+        const area = box.w*box.h;
+        if(area<bestArea){ bestArea = area; best = it; }
+      }
+    }
+    return best;
+  }
+
   roomEl.addEventListener('pointerdown', (e)=>{
-    if(e.target===roomEl){
+    // 회전/크기조절 핸들, 툴바 버튼 위 클릭은 그쪽 리스너가 각자 처리하므로 여기선 무시
+    if(e.target.closest('.toolbar-float, .resize-handle, .rotate-handle, .rotate-stem, .size-badge')) return;
+    const r = roomEl.getBoundingClientRect();
+    const xCm = (e.clientX-r.left)/PPCM, yCm = (e.clientY-r.top)/PPCM;
+    const hit = hitTestItem(xCm, yCm);
+    if(hit){
+      onDragStart(e, hit);
+    } else if(e.target===roomEl){
       selectedId = null;
       render();
     }
@@ -1700,22 +1714,32 @@
 
   async function searchPolyPizza(query){
     modelResultsEl.innerHTML = '<div class="model-hint">검색 중...</div>';
+    let res, bodyText;
     try{
-      // 키는 여기 없어요 — Vercel의 /api/search-models 서버리스 함수가 대신 보관하고
-      // 대신 요청해줘요. 이 함수는 배포된 사이트에서만 동작하고, 이 채팅 미리보기
-      // 안에서는 /api 경로가 없어서 검색이 안 될 수 있어요 (정상이에요).
-      const res = await fetch('/api/search-models?q='+encodeURIComponent(query));
-      if(!res.ok){
-        if(res.status===404){ modelResultsEl.innerHTML = '<div class="model-hint">지금은 미리보기 상태라 검색 함수가 없어요. Vercel에 배포하면 동작해요.</div>'; return; }
-        throw new Error('요청 실패 ('+res.status+')');
-      }
-      const data = await res.json();
-      const results = data.results || data.Results || [];
-      renderModelResults(results);
+      res = await fetch('/api/search-models?q='+encodeURIComponent(query));
+      bodyText = await res.text();
     }catch(e){
-      modelResultsEl.innerHTML = '<div class="model-hint">검색 실패 — 네트워크나 배포 상태를 확인해줘.</div>';
+      modelResultsEl.innerHTML = '<div class="model-hint">네트워크 요청 자체가 실패했어요: '+esc(String(e))+'</div>';
+      return;
     }
+    if(!res.ok){
+      modelResultsEl.innerHTML = '<div class="model-hint">서버 응답 오류 (상태 '+res.status+')<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
+      return;
+    }
+    let data;
+    try{ data = JSON.parse(bodyText); }
+    catch(e){
+      modelResultsEl.innerHTML = '<div class="model-hint">응답이 JSON이 아니에요:<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
+      return;
+    }
+    const results = data.results || data.Results || [];
+    if(!results.length){
+      modelResultsEl.innerHTML = '<div class="model-hint">결과 0건. 서버 응답: <span style="opacity:.7">'+esc(JSON.stringify(data).slice(0,300))+'</span></div>';
+      return;
+    }
+    renderModelResults(results);
   }
+  function esc(s){ return s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
   function renderModelResults(results){
     modelResultsEl.innerHTML = '';
