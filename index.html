@@ -967,6 +967,35 @@
   let idCounter = 1;
   let mode = '2d';
 
+  // ---------- undo (Ctrl+Z) ----------
+  let history = [];
+  const MAX_HISTORY = 50;
+  function pushHistory(){
+    history.push(JSON.stringify({ room, items }));
+    if(history.length>MAX_HISTORY) history.shift();
+  }
+  function undo(){
+    if(history.length===0){ showToast('더 되돌릴 게 없어요.', 'info'); return; }
+    const prev = JSON.parse(history.pop());
+    room = prev.room;
+    items = prev.items;
+    document.getElementById('roomW').value = room.w;
+    document.getElementById('roomD').value = room.d;
+    document.getElementById('roomMeta').textContent = `${room.w} × ${room.d} cm`;
+    selectedId = null;
+    render();
+    if(mode==='3d') build3D();
+    showToast('되돌렸어요.', 'info');
+  }
+  document.addEventListener('keydown', (e)=>{
+    const tag = document.activeElement && document.activeElement.tagName;
+    if(tag==='INPUT' || tag==='TEXTAREA') return; // 텍스트 입력 중엔 브라우저 기본 되돌리기 우선
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){
+      e.preventDefault();
+      undo();
+    }
+  });
+
   const roomEl = document.getElementById('room');
   const grid = document.getElementById('furnitureGrid');
   const emptyHint = document.getElementById('emptyHint');
@@ -1007,6 +1036,7 @@
   }
 
   function addItem(f){
+    pushHistory();
     const id = 'it'+(idCounter++);
     const spot = findFreeSpot(f.w, f.d);
     items.push({ id, key:f.key, name:f.name, x:spot.x, y:spot.y, w:f.w, d:f.d, rot:0, color:f.color });
@@ -1034,6 +1064,7 @@
 
   document.getElementById('clearBtn').addEventListener('click', ()=>{
     if(items.length===0) return;
+    pushHistory();
     items = [];
     selectedId = null;
     render();
@@ -1147,7 +1178,14 @@
     Array.from(roomEl.querySelectorAll('.item, .toolbar-float, .resize-handle, .size-badge, .rotate-handle, .rotate-stem')).forEach(el=>el.remove());
     emptyHint.style.display = items.length===0 ? 'flex' : 'none';
 
-    items.forEach(it=>{
+    // 큰 가구를 먼저 그리고 작은 가구를 나중에(위에) 그려서, 겹쳤을 때 작은 걸(문 등)
+    // 클릭하기 쉽게 해요. 선택된 가구는 항상 맨 위로.
+    const drawOrder = [...items].sort((a,b)=>{
+      if(a.id===selectedId) return 1;
+      if(b.id===selectedId) return -1;
+      return (b.w*b.d) - (a.w*a.d);
+    });
+    drawOrder.forEach(it=>{
       const box = getAABB(it.w, it.d, it.rot);
       const effW = box.w, effH = box.h;
 
@@ -1194,6 +1232,7 @@
         roomEl.appendChild(tb);
         tb.querySelector('#rotBtn').addEventListener('click', (e)=>{
           e.stopPropagation();
+          pushHistory();
           setItemRotation(it, it.rot+90);
           render();
           if(mode==='3d') build3D();
@@ -1201,12 +1240,14 @@
         const flipBtn = tb.querySelector('#flipBtn');
         if(flipBtn) flipBtn.addEventListener('click', (e)=>{
           e.stopPropagation();
+          pushHistory();
           it.flip = !it.flip;
           render();
           if(mode==='3d') build3D();
         });
         tb.querySelector('#delBtn').addEventListener('click', (e)=>{
           e.stopPropagation();
+          pushHistory();
           items = items.filter(i=>i.id!==it.id);
           selectedId = null;
           render();
@@ -1286,6 +1327,7 @@
   function onRotateStart(e, it){
     e.stopPropagation();
     e.preventDefault();
+    pushHistory();
     const box = getAABB(it.w, it.d, it.rot);
     rotateCtx = { id: it.id, cxCm: it.x+box.w/2, cyCm: it.y+box.h/2 };
     document.addEventListener('pointermove', onRotateMove);
@@ -1385,6 +1427,7 @@
   function onResizeStart(e, it){
     e.stopPropagation();
     e.preventDefault();
+    pushHistory();
     const rot0 = it.rot%180===0;
     resizeCtx = {
       id: it.id,
@@ -1452,7 +1495,8 @@
     dragCtx = {
       id,
       offsetX: e.clientX - roomRect.left - it.x*PPCM,
-      offsetY: e.clientY - roomRect.top - it.y*PPCM
+      offsetY: e.clientY - roomRect.top - it.y*PPCM,
+      historyPushed: false // 실제로 움직이기 시작할 때만 undo에 기록 (그냥 클릭은 제외)
     };
     render();
     document.addEventListener('pointermove', onDragMove);
@@ -1463,6 +1507,7 @@
     if(!dragCtx) return;
     const it = items.find(i=>i.id===dragCtx.id);
     if(!it) return;
+    if(!dragCtx.historyPushed){ pushHistory(); dragCtx.historyPushed = true; }
     const roomRect = roomEl.getBoundingClientRect();
     let xCm = (e.clientX - roomRect.left - dragCtx.offsetX) / PPCM;
     let yCm = (e.clientY - roomRect.top - dragCtx.offsetY) / PPCM;

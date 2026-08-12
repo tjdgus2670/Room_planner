@@ -17,8 +17,8 @@ export default async function handler(req, res) {
 
   try {
     const upstream = await fetch(
-      'https://api.poly.pizza/v1.1/search/' + encodeURIComponent(query),
-      { headers: { 'x-auth-token': apiKey } }
+      'https://api.poly.pizza/v1/search/' + encodeURIComponent(query) + '?limit=12',
+      { headers: { 'X-Auth-Token': apiKey } }
     );
     const data = await upstream.json();
     // 브라우저 쪽 캐시/CDN에 잠깐 캐싱해서 같은 검색어 반복 요청을 줄여줘요.
