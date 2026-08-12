@@ -46,6 +46,10 @@
     background:var(--white);
     border-right:1px solid var(--paper-line);
     padding:22px 18px 40px;
+    height:100vh;
+    position:sticky;
+    top:0;
+    overflow-y:auto;
   }
   .brand{
     font-family:'Archivo',sans-serif;
@@ -565,6 +569,64 @@
   .model-result img{ width:100%; height:46px; object-fit:cover; border-radius:4px; display:block; margin-bottom:3px; background:#fff;}
   .model-result .mname{ font-size:9.5px; color:var(--ink-soft); line-height:1.2; }
   .model-hint{ font-size:10.5px; color:var(--ink-soft); margin-bottom:8px; line-height:1.4; }
+
+  /* ---------- Category search modal ---------- */
+  .modal-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(22,50,79,0.45);
+    z-index:200;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .modal-card{
+    width:100%;
+    max-width:480px;
+    max-height:82vh;
+    background:var(--white);
+    border-radius:14px;
+    padding:20px 22px 22px;
+    box-shadow:0 20px 50px rgba(0,0,0,0.3);
+    display:flex;
+    flex-direction:column;
+  }
+  .modal-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:4px;
+  }
+  .modal-header h2{
+    font-family:'Archivo',sans-serif;
+    font-size:16px;
+    font-weight:700;
+    color:var(--blue-deep);
+    margin:0;
+  }
+  .modal-header button{
+    border:none;
+    background:transparent;
+    font-size:16px;
+    cursor:pointer;
+    color:var(--ink-soft);
+    padding:2px 6px;
+  }
+  .modal-card .model-search-row{ margin-top:12px; }
+  .modal-card .model-results{
+    grid-template-columns:1fr 1fr 1fr;
+    max-height:none;
+    overflow-y:auto;
+    flex:1;
+    min-height:120px;
+  }
+  .modal-card .model-result img{ height:64px; }
+  .modal-footer{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px solid var(--paper-line);
+  }
 </style>
 </head>
 <body>
@@ -670,6 +732,24 @@
       <div class="hint3d">드래그: 회전 · 휠: 확대·축소</div>
     </div>
   </main>
+</div>
+
+<div id="categorySearchModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 id="categorySearchTitle">가구 검색</h2>
+      <button id="categorySearchClose">✕</button>
+    </div>
+    <div class="model-hint">실제 3D 모델을 검색해서 고르면 그대로 방에 놓여요 (Poly Pizza).</div>
+    <div class="model-search-row">
+      <input type="text" id="categorySearchInput" placeholder="검색어">
+      <button id="categorySearchBtn">검색</button>
+    </div>
+    <div class="model-results" id="categoryModelResults"></div>
+    <div class="modal-footer">
+      <button class="btn" id="categoryUsePlaceholder">실제 모델 대신 기본 도형으로 추가</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -817,6 +897,14 @@
   ];
   const TYPE_MAP = {};
   FURNITURE_TYPES.forEach(f=> TYPE_MAP[f.key]=f);
+
+  // 카테고리 클릭 시 자동으로 검색할 영어 키워드 (Poly Pizza가 영어 태그 기반이라).
+  // door/window는 여기 없음 — 스윙 표시 등 우리 자체 기능이 있어서 기본 도형을 계속 써요.
+  const SEARCH_KEYWORD = {
+    bed_d:'bed', bed_s:'bed', sofa:'sofa', table:'dining table', desk:'desk',
+    chair:'chair', wardrobe:'wardrobe', built_wardrobe:'wardrobe', tv:'tv stand',
+    shelf:'bookshelf', plant:'plant', rug:'rug', fridge:'refrigerator'
+  };
 
   // ---------- helpers ----------
   function shade(hex, percent){
@@ -1027,7 +1115,10 @@
     card.innerHTML = `<div class="icon">${iconSVG(f.key,f.w,f.d,f.color)}</div>
       <div class="name">${f.name}</div>
       <div class="dim">${f.w}×${f.d}</div>`;
-    card.addEventListener('click', ()=> addItem(f));
+    card.addEventListener('click', ()=>{
+      if(SEARCH_KEYWORD[f.key]) openCategorySearch(f);
+      else addItem(f); // 문/창문은 바로 추가 (자체 도형·스윙 기능 유지)
+    });
     grid.appendChild(card);
   });
 
@@ -1050,11 +1141,13 @@
     return { x:cx, y:cy }; // 다 막혀있으면 그냥 중앙에 (마지막 수단)
   }
 
-  function addItem(f){
+  function addItem(f, picked){
     pushHistory();
     const id = genId();
     const spot = findFreeSpot(f.w, f.d);
-    items.push({ id, key:f.key, name:f.name, x:spot.x, y:spot.y, w:f.w, d:f.d, rot:0, color:f.color });
+    const newItem = { id, key:f.key, name:f.name, x:spot.x, y:spot.y, w:f.w, d:f.d, rot:0, color:f.color };
+    if(picked){ newItem.modelUrl = picked.downloadUrl; newItem.thumbnailUrl = picked.thumb; }
+    items.push(newItem);
     selectedId = id;
     render();
     if(mode==='3d') build3D();
@@ -1211,7 +1304,15 @@
       iconWrap.style.width = (it.w*PPCM)+'px';
       iconWrap.style.height = (it.d*PPCM)+'px';
       iconWrap.style.transform = `translate(-50%,-50%) rotate(${it.rot}deg)`;
-      iconWrap.innerHTML = iconSVG(it.key, it.w, it.d, it.color, it.flip);
+      if(it.thumbnailUrl){
+        const img = document.createElement('img');
+        img.src = it.thumbnailUrl;
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.15);';
+        img.addEventListener('error', ()=>{ iconWrap.innerHTML = iconSVG(it.key, it.w, it.d, it.color, it.flip); });
+        iconWrap.appendChild(img);
+      } else {
+        iconWrap.innerHTML = iconSVG(it.key, it.w, it.d, it.color, it.flip);
+      }
       el.appendChild(iconWrap);
 
       const label = document.createElement('span');
@@ -1727,43 +1828,45 @@
   document.getElementById('modelClearBtn').addEventListener('click', ()=>{
     const it = items.find(i=>i.id===selectedId);
     if(!it) return;
+    pushHistory();
     delete it.modelUrl;
+    delete it.thumbnailUrl;
     render();
     if(mode==='3d') build3D();
   });
 
-  async function searchPolyPizza(query){
-    modelResultsEl.innerHTML = '<div class="model-hint">검색 중...</div>';
+  async function runModelSearch(query, resultsEl, onPick){
+    resultsEl.innerHTML = '<div class="model-hint">검색 중...</div>';
     let res, bodyText;
     try{
       res = await fetch('/api/search-models?q='+encodeURIComponent(query));
       bodyText = await res.text();
     }catch(e){
-      modelResultsEl.innerHTML = '<div class="model-hint">네트워크 요청 자체가 실패했어요: '+esc(String(e))+'</div>';
+      resultsEl.innerHTML = '<div class="model-hint">네트워크 요청 자체가 실패했어요: '+esc(String(e))+'</div>';
       return;
     }
     if(!res.ok){
-      modelResultsEl.innerHTML = '<div class="model-hint">서버 응답 오류 (상태 '+res.status+')<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
+      resultsEl.innerHTML = '<div class="model-hint">서버 응답 오류 (상태 '+res.status+')<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
       return;
     }
     let data;
     try{ data = JSON.parse(bodyText); }
     catch(e){
-      modelResultsEl.innerHTML = '<div class="model-hint">응답이 JSON이 아니에요:<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
+      resultsEl.innerHTML = '<div class="model-hint">응답이 JSON이 아니에요:<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
       return;
     }
     const results = data.results || data.Results || [];
     if(!results.length){
-      modelResultsEl.innerHTML = '<div class="model-hint">결과 0건. 서버 응답: <span style="opacity:.7">'+esc(JSON.stringify(data).slice(0,300))+'</span></div>';
+      resultsEl.innerHTML = '<div class="model-hint">결과 0건. 서버 응답: <span style="opacity:.7">'+esc(JSON.stringify(data).slice(0,300))+'</span></div>';
       return;
     }
-    renderModelResults(results);
+    renderModelResults(results, resultsEl, onPick);
   }
   function esc(s){ return s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
-  function renderModelResults(results){
-    modelResultsEl.innerHTML = '';
-    if(!results.length){ modelResultsEl.innerHTML = '<div class="model-hint">결과가 없어요.</div>'; return; }
+  function renderModelResults(results, resultsEl, onPick){
+    resultsEl.innerHTML = '';
+    if(!results.length){ resultsEl.innerHTML = '<div class="model-hint">결과가 없어요.</div>'; return; }
     results.slice(0,12).forEach(r=>{
       const title = r.Title || r.title || '모델';
       const thumb = r.Thumbnail || r.ThumbnailUrl || r.thumbnail || '';
@@ -1776,16 +1879,59 @@
       const card = document.createElement('div');
       card.className = 'model-result';
       card.innerHTML = `<img src="${thumb}" onerror="this.style.display='none'"><div class="mname">${title}</div>`;
-      card.addEventListener('click', ()=>{
-        const it = items.find(i=>i.id===selectedId);
-        if(!it) return;
-        it.modelUrl = downloadUrl;
-        render();
-        if(mode==='3d') build3D();
-      });
-      modelResultsEl.appendChild(card);
+      card.addEventListener('click', ()=> onPick({ downloadUrl, thumb, title }));
+      resultsEl.appendChild(card);
     });
   }
+
+  async function searchPolyPizza(query){
+    await runModelSearch(query, modelResultsEl, (picked)=>{
+      const it = items.find(i=>i.id===selectedId);
+      if(!it) return;
+      pushHistory();
+      it.modelUrl = picked.downloadUrl;
+      it.thumbnailUrl = picked.thumb;
+      render();
+      if(mode==='3d') build3D();
+    });
+  }
+
+  // ---------- category search modal (가구 추가 시 바로 검색) ----------
+  const categoryModal = document.getElementById('categorySearchModal');
+  const categoryModelResultsEl = document.getElementById('categoryModelResults');
+  const categorySearchInput = document.getElementById('categorySearchInput');
+  let pendingCategory = null;
+
+  function openCategorySearch(f){
+    pendingCategory = f;
+    document.getElementById('categorySearchTitle').textContent = f.name + ' 검색';
+    categorySearchInput.value = SEARCH_KEYWORD[f.key] || f.name;
+    categoryModal.style.display = 'flex';
+    runModelSearch(categorySearchInput.value, categoryModelResultsEl, (picked)=>{
+      addItem(f, picked);
+      closeCategoryModal();
+    });
+  }
+  function closeCategoryModal(){
+    categoryModal.style.display = 'none';
+    pendingCategory = null;
+  }
+  document.getElementById('categorySearchClose').addEventListener('click', closeCategoryModal);
+  categoryModal.addEventListener('pointerdown', (e)=>{ if(e.target===categoryModal) closeCategoryModal(); });
+  document.getElementById('categorySearchBtn').addEventListener('click', ()=>{
+    const q = categorySearchInput.value.trim();
+    if(q) runModelSearch(q, categoryModelResultsEl, (picked)=>{ addItem(pendingCategory, picked); closeCategoryModal(); });
+  });
+  categorySearchInput.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){
+      const q = e.target.value.trim();
+      if(q) runModelSearch(q, categoryModelResultsEl, (picked)=>{ addItem(pendingCategory, picked); closeCategoryModal(); });
+    }
+  });
+  document.getElementById('categoryUsePlaceholder').addEventListener('click', ()=>{
+    if(pendingCategory) addItem(pendingCategory);
+    closeCategoryModal();
+  });
 
   function build3DItem(it){
     const g = new THREE.Group();
