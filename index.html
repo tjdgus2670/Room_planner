@@ -579,6 +579,8 @@
     background:var(--paper);
   }
   .model-result:hover{ border-color:var(--blue); }
+  .model-result.picked{ border-color:var(--blue-deep); border-width:2px; background:#EAF2F8; }
+  #photoPickedDot{ color:#2F6E4E; font-size:9px; margin-left:3px; }
   .model-result img{ width:100%; height:46px; object-fit:cover; border-radius:4px; display:block; margin-bottom:3px; background:#fff;}
   .model-result .mname{ font-size:9.5px; color:var(--ink-soft); line-height:1.2; }
   .model-hint{ font-size:10.5px; color:var(--ink-soft); margin-bottom:8px; line-height:1.4; }
@@ -753,14 +755,32 @@
       <h2 id="categorySearchTitle">가구 검색</h2>
       <button id="categorySearchClose">✕</button>
     </div>
-    <div class="model-hint">실제 3D 모델을 검색해서 고르면 그대로 방에 놓여요 (Poly Pizza).</div>
-    <div class="model-search-row">
-      <input type="text" id="categorySearchInput" placeholder="검색어">
-      <button id="categorySearchBtn">검색</button>
+    <div class="tabs" style="margin-top:8px;">
+      <button class="tab-btn active" id="modalTab3d">3D 모델 (Poly Pizza)</button>
+      <button class="tab-btn" id="modalTabPhoto">실물 사진 (eBay) <span id="photoPickedDot" style="display:none;">●</span></button>
     </div>
-    <div class="model-results" id="categoryModelResults"></div>
+
+    <div id="modalPane3d">
+      <div class="model-hint">실제 3D 모델을 검색해서 고르면 그대로 방에 놓여요.</div>
+      <div class="model-search-row">
+        <input type="text" id="categorySearchInput" placeholder="검색어">
+        <button id="categorySearchBtn">검색</button>
+      </div>
+      <div class="model-results" id="categoryModelResults"></div>
+    </div>
+
+    <div id="modalPanePhoto" style="display:none;">
+      <div class="model-hint">실제 판매 중인 상품 사진으로 2D 썸네일을 바꿀 수 있어요. 가격·구매 링크도 같이 저장돼요.</div>
+      <div class="model-search-row">
+        <input type="text" id="photoSearchInput" placeholder="검색어">
+        <button id="photoSearchBtn">검색</button>
+      </div>
+      <div class="model-results" id="photoResults"></div>
+    </div>
+
     <div class="modal-footer">
-      <button class="btn" id="categoryUsePlaceholder">실제 모델 대신 기본 도형으로 추가</button>
+      <button class="btn primary" id="categoryAddDone">이 상태로 방에 추가</button>
+      <button class="btn" id="categoryUsePlaceholder">기본 도형으로 추가 (사진/모델 없이)</button>
     </div>
   </div>
 </div>
@@ -1154,12 +1174,18 @@
     return { x:cx, y:cy }; // 다 막혀있으면 그냥 중앙에 (마지막 수단)
   }
 
-  function addItem(f, picked){
+  function addItem(f, picked, photo){
     pushHistory();
     const id = genId();
     const spot = findFreeSpot(f.w, f.d);
     const newItem = { id, key:f.key, name:f.name, x:spot.x, y:spot.y, w:f.w, d:f.d, rot:0, color:f.color };
-    if(picked){ newItem.modelUrl = picked.downloadUrl; newItem.thumbnailUrl = picked.thumb; }
+    if(picked){ newItem.modelUrl = picked.downloadUrl; if(!photo) newItem.thumbnailUrl = picked.thumb; }
+    if(photo){
+      newItem.thumbnailUrl = photo.thumb;
+      newItem.buyLink = photo.buyLink;
+      newItem.buyPrice = photo.price;
+      newItem.buyMall = photo.mallName;
+    }
     items.push(newItem);
     selectedId = id;
     render();
@@ -1354,7 +1380,8 @@
         tb.style.left = (it.x*PPCM)+'px';
         tb.style.top = (it.y*PPCM - 34)+'px';
         const flipBtnHtml = it.key==='door' ? `<button title="열림 방향 뒤집기" id="flipBtn">⇋</button>` : '';
-        tb.innerHTML = `<button title="90° 회전" id="rotBtn">↻</button>${flipBtnHtml}<button title="삭제" id="delBtn">✕</button>`;
+        const buyBtnHtml = it.buyLink ? `<button title="구매처 보기" id="buyBtn">🔗</button>` : '';
+        tb.innerHTML = `<button title="90° 회전" id="rotBtn">↻</button>${flipBtnHtml}${buyBtnHtml}<button title="삭제" id="delBtn">✕</button>`;
         roomEl.appendChild(tb);
         tb.querySelector('#rotBtn').addEventListener('click', (e)=>{
           e.stopPropagation();
@@ -1371,6 +1398,11 @@
           render();
           if(mode==='3d') build3D();
         });
+        const buyBtn = tb.querySelector('#buyBtn');
+        if(buyBtn) buyBtn.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          window.open(it.buyLink, '_blank', 'noopener');
+        });
         tb.querySelector('#delBtn').addEventListener('click', (e)=>{
           e.stopPropagation();
           pushHistory();
@@ -1382,7 +1414,7 @@
 
         const badge = document.createElement('div');
         badge.className = 'size-badge';
-        badge.textContent = `${Math.round(it.w)} × ${Math.round(it.d)} cm · ${Math.round(it.rot)}°`;
+        badge.textContent = `${Math.round(it.w)} × ${Math.round(it.d)} cm · ${Math.round(it.rot)}°` + (it.buyPrice ? ` · ${it.buyPrice}` : '');
         badge.style.left = (it.x*PPCM)+'px';
         badge.style.top = (it.y*PPCM + effH*PPCM + 6)+'px';
         roomEl.appendChild(badge);
@@ -1831,6 +1863,31 @@
     });
   }
 
+  function loadGltfAsync(url){
+    return new Promise((resolve, reject)=>{
+      if(modelCache[url]){ resolve(modelCache[url]); return; }
+      if(!gltfLoader){ reject(new Error('GLTFLoader 없음')); return; }
+      gltfLoader.load(url, (gltf)=>{ modelCache[url] = gltf.scene; resolve(gltf.scene); }, undefined, reject);
+    });
+  }
+
+  // 모델을 실제로 한번 불러와서 가로:세로 비율을 읽고, 우리 카테고리 기본 "면적"은
+  // 유지한 채 그 비율에 맞는 2D 크기(w,d)를 계산해요. 절대 cm 값은 라이브러리가
+  // 안 주기 때문에 맞출 수 없지만, 형태(비율)는 실제 모델 그대로 반영돼요.
+  async function sizeFromModel(url, fallbackW, fallbackD){
+    const scene = await loadGltfAsync(url);
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = new THREE.Vector3(); box.getSize(size);
+    if(size.x<0.001 || size.z<0.001) return { w:fallbackW, d:fallbackD };
+    const ratio = size.x/size.z;
+    const baseArea = fallbackW*fallbackD;
+    let newD = Math.sqrt(baseArea/ratio);
+    let newW = ratio*newD;
+    newW = clamp(Math.round(newW/5)*5, 20, 400);
+    newD = clamp(Math.round(newD/5)*5, 20, 400);
+    return { w:newW, d:newD };
+  }
+
   const modelResultsEl = document.getElementById('modelResults');
   document.getElementById('modelSearchBtn').addEventListener('click', ()=>{
     const q = document.getElementById('modelSearchInput').value.trim();
@@ -1893,18 +1950,23 @@
       const card = document.createElement('div');
       card.className = 'model-result';
       card.innerHTML = `<img src="${thumb}" onerror="this.style.display='none'"><div class="mname">${title}</div>`;
-      card.addEventListener('click', ()=> onPick({ downloadUrl, thumb, title }));
+      card.addEventListener('click', ()=> onPick({ downloadUrl, thumb, title }, card));
       resultsEl.appendChild(card);
     });
   }
 
   async function searchPolyPizza(query){
-    await runModelSearch(query, modelResultsEl, (picked)=>{
+    await runModelSearch(query, modelResultsEl, async (picked)=>{
       const it = items.find(i=>i.id===selectedId);
       if(!it) return;
       pushHistory();
       it.modelUrl = picked.downloadUrl;
       it.thumbnailUrl = picked.thumb;
+      showToast('모델 비율 확인 중...', 'info');
+      try{
+        const sized = await sizeFromModel(picked.downloadUrl, it.w, it.d);
+        it.w = sized.w; it.d = sized.d;
+      }catch(e){ /* 실패하면 기존 크기 유지 */ }
       render();
       if(mode==='3d') build3D();
     });
@@ -1914,38 +1976,132 @@
   const categoryModal = document.getElementById('categorySearchModal');
   const categoryModelResultsEl = document.getElementById('categoryModelResults');
   const categorySearchInput = document.getElementById('categorySearchInput');
+  const photoResultsEl = document.getElementById('photoResults');
+  const photoSearchInput = document.getElementById('photoSearchInput');
+  const modalTab3d = document.getElementById('modalTab3d');
+  const modalTabPhoto = document.getElementById('modalTabPhoto');
+  const modalPane3d = document.getElementById('modalPane3d');
+  const modalPanePhoto = document.getElementById('modalPanePhoto');
+  const photoPickedDot = document.getElementById('photoPickedDot');
   let pendingCategory = null;
+  let pendingModel = null; // {downloadUrl, thumb, title}
+  let pendingPhoto = null; // {thumb, buyLink, price, mallName, title}
+
+  modalTab3d.addEventListener('click', ()=>{
+    modalTab3d.classList.add('active'); modalTabPhoto.classList.remove('active');
+    modalPane3d.style.display=''; modalPanePhoto.style.display='none';
+  });
+  modalTabPhoto.addEventListener('click', ()=>{
+    modalTabPhoto.classList.add('active'); modalTab3d.classList.remove('active');
+    modalPanePhoto.style.display=''; modalPane3d.style.display='none';
+  });
+
+  function markPicked(resultsEl, cardEl){
+    resultsEl.querySelectorAll('.model-result').forEach(c=> c.classList.remove('picked'));
+    cardEl.classList.add('picked');
+  }
 
   function openCategorySearch(f){
     pendingCategory = f;
+    pendingModel = null;
+    pendingPhoto = null;
+    photoPickedDot.style.display = 'none';
     document.getElementById('categorySearchTitle').textContent = f.name + ' 검색';
     categorySearchInput.value = SEARCH_KEYWORD[f.key] || f.name;
+    photoSearchInput.value = SEARCH_KEYWORD[f.key] || f.name; // eBay는 해외 사이트라 영어 검색어가 훨씬 잘 맞아요
+    modalTab3d.click();
     categoryModal.style.display = 'flex';
-    runModelSearch(categorySearchInput.value, categoryModelResultsEl, (picked)=>{
-      addItem(f, picked);
-      closeCategoryModal();
-    });
+    runCategory3dSearch(categorySearchInput.value);
   }
   function closeCategoryModal(){
     categoryModal.style.display = 'none';
-    pendingCategory = null;
+    pendingCategory = null; pendingModel = null; pendingPhoto = null;
   }
   document.getElementById('categorySearchClose').addEventListener('click', closeCategoryModal);
   categoryModal.addEventListener('pointerdown', (e)=>{ if(e.target===categoryModal) closeCategoryModal(); });
+
+  function runCategory3dSearch(q){
+    runModelSearch(q, categoryModelResultsEl, (picked, cardEl)=>{
+      pendingModel = picked;
+      markPicked(categoryModelResultsEl, cardEl);
+    });
+  }
   document.getElementById('categorySearchBtn').addEventListener('click', ()=>{
     const q = categorySearchInput.value.trim();
-    if(q) runModelSearch(q, categoryModelResultsEl, (picked)=>{ addItem(pendingCategory, picked); closeCategoryModal(); });
+    if(q) runCategory3dSearch(q);
   });
   categorySearchInput.addEventListener('keydown', (e)=>{
-    if(e.key==='Enter'){
-      const q = e.target.value.trim();
-      if(q) runModelSearch(q, categoryModelResultsEl, (picked)=>{ addItem(pendingCategory, picked); closeCategoryModal(); });
+    if(e.key==='Enter'){ const q=e.target.value.trim(); if(q) runCategory3dSearch(q); }
+  });
+
+  function runPhotoSearch(q){
+    runShoppingSearch(q, photoResultsEl, (picked, cardEl)=>{
+      pendingPhoto = picked;
+      photoPickedDot.style.display = '';
+      markPicked(photoResultsEl, cardEl);
+    });
+  }
+  document.getElementById('photoSearchBtn').addEventListener('click', ()=>{
+    const q = photoSearchInput.value.trim();
+    if(q) runPhotoSearch(q);
+  });
+  photoSearchInput.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){ const q=e.target.value.trim(); if(q) runPhotoSearch(q); }
+  });
+
+  document.getElementById('categoryAddDone').addEventListener('click', async ()=>{
+    if(!pendingCategory) return;
+    const f = pendingCategory, model = pendingModel, photo = pendingPhoto;
+    closeCategoryModal();
+    let w = f.w, d = f.d;
+    if(model){
+      showToast('모델 비율 확인 중...', 'info');
+      try{ const sized = await sizeFromModel(model.downloadUrl, f.w, f.d); w = sized.w; d = sized.d; }
+      catch(e){ /* 실패하면 기본 크기 */ }
     }
+    addItem({ ...f, w, d }, model, photo);
   });
   document.getElementById('categoryUsePlaceholder').addEventListener('click', ()=>{
     if(pendingCategory) addItem(pendingCategory);
     closeCategoryModal();
   });
+
+  async function runShoppingSearch(query, resultsEl, onPick){
+    resultsEl.innerHTML = '<div class="model-hint">검색 중...</div>';
+    let res, bodyText;
+    try{
+      res = await fetch('/api/search-shopping?q='+encodeURIComponent(query));
+      bodyText = await res.text();
+    }catch(e){
+      resultsEl.innerHTML = '<div class="model-hint">네트워크 요청 자체가 실패했어요: '+esc(String(e))+'</div>';
+      return;
+    }
+    if(!res.ok){
+      resultsEl.innerHTML = '<div class="model-hint">서버 응답 오류 (상태 '+res.status+')<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
+      return;
+    }
+    let data;
+    try{ data = JSON.parse(bodyText); }
+    catch(e){
+      resultsEl.innerHTML = '<div class="model-hint">응답이 JSON이 아니에요:<br><span style="opacity:.7">'+esc(bodyText.slice(0,300))+'</span></div>';
+      return;
+    }
+    const items = data.items || [];
+    if(!items.length){
+      resultsEl.innerHTML = '<div class="model-hint">결과 0건. 서버 응답: <span style="opacity:.7">'+esc(JSON.stringify(data).slice(0,300))+'</span></div>';
+      return;
+    }
+    resultsEl.innerHTML = '';
+    items.slice(0,12).forEach(r=>{
+      const title = (r.title||'상품').replace(/<\/?b>/g,'');
+      const price = r.price ? Number(r.price).toLocaleString()+' '+(r.currency||'') : '';
+      const card = document.createElement('div');
+      card.className = 'model-result';
+      card.innerHTML = `<img src="${r.image}" onerror="this.style.display='none'"><div class="mname">${esc(title)}</div><div class="mname" style="opacity:.7">${price} · ${esc(r.mallName||'')}</div>`;
+      card.addEventListener('click', ()=> onPick({ thumb:r.image, buyLink:r.link, price, mallName:r.mallName, title }, card));
+      resultsEl.appendChild(card);
+    });
+  }
 
   function build3DItem(it){
     const g = new THREE.Group();
