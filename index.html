@@ -421,17 +421,25 @@
     white-space:nowrap;
     pointer-events:none;
   }
-  .item-thumb-badge{
+  .item-real-photo{
     position:absolute;
-    top:-7px;
-    left:-7px;
-    width:24px;
-    height:24px;
-    border-radius:50%;
-    object-fit:cover;
-    border:2px solid var(--white);
-    box-shadow:0 2px 6px rgba(0,0,0,0.35);
+    top:50%; left:50%;
+    width:92%; height:92%;
+    transform:translate(-50%,-50%);
+    object-fit:contain; /* 절대 늘리지 않고, 비율 그대로 꽉 채워서 보여줘요 */
+    border-radius:6px;
     background:var(--white);
+    box-shadow:0 3px 10px rgba(16,24,38,0.25), 0 0 0 1px rgba(16,24,38,0.08);
+    pointer-events:none;
+  }
+  .item-real-badge{
+    position:absolute;
+    top:-6px; right:-6px;
+    width:16px; height:16px;
+    border-radius:50%;
+    background:#2F6E4E;
+    border:2px solid var(--white);
+    box-shadow:0 1px 4px rgba(0,0,0,0.3);
     pointer-events:none;
   }
   .item:active{cursor:grabbing;}
@@ -905,7 +913,7 @@
     </div>
 
     <div id="modalPanePhoto" style="display:none;">
-      <div class="model-hint">실제 판매 중인 상품 사진으로 2D 썸네일을 바꿀 수 있어요. 가격·구매 링크도 같이 저장돼요.</div>
+      <div class="model-hint">실제 판매 상품 사진으로 바꿔요. 단, 3D 모델(위 탭)이랑은 다른 물건일 수 있어요 — 2D·3D를 같은 물건으로 맞추고 싶으면 이 탭은 건너뛰고 3D 모델만 골라도 충분해요 (그 모델 사진이 2D에도 그대로 쓰여요).</div>
       <div class="model-search-row">
         <input type="text" id="photoSearchInput" placeholder="검색어">
         <button id="photoSearchBtn">검색</button>
@@ -1109,6 +1117,30 @@
     frame:'picture frame', cushion:'cushion', trash:'trash can',
     speaker:'speaker', rack:'clothing rack'
   };
+
+  // ---- Kenney "Furniture Kit" (CC0, kenney.nl) — 2D 탑뷰 이미지와 3D glb 모델이
+  // 같은 세트에서 나와서 항상 서로 정확히 일치해요. API 검색 없이 클릭하자마자
+  // 바로 실제 이미지/모델로 배치돼요. GitHub 미러(raw.githubusercontent.com)에서 가져와요.
+  const KENNEY_BASE = 'https://raw.githubusercontent.com/ETdoFresh/kenney.nl/master/furniturekit_updated';
+  function kenneyModelUrl(name){ return KENNEY_BASE + '/Models/GLTF%20format/' + name + '.glb'; }
+  function kenneyThumbUrl(name){ return KENNEY_BASE + '/Isometric/' + name + '_SW.png'; }
+  const KENNEY_ASSET = {
+    bed_d:'bedDouble', bed_s:'bedSingle', sofa:'loungeSofa', table:'table', desk:'desk',
+    chair:'chairCushion', wardrobe:'bookcaseClosedWide', built_wardrobe:'bookcaseClosedWide',
+    tv:'cabinetTelevision', shelf:'bookcaseOpen', plant:'pottedPlant', rug:'rugRectangle',
+    fridge:'kitchenFridge', monitor:'computerScreen', nightstand:'sideTableDrawers',
+    floorlamp:'lampRoundFloor', cushion:'pillow', trash:'trashcan', speaker:'speaker',
+    rack:'coatRackStanding'
+  };
+  async function addKenneyItem(f){
+    const name = KENNEY_ASSET[f.key];
+    const modelUrl = kenneyModelUrl(name);
+    const thumb = kenneyThumbUrl(name);
+    let w = f.w, d = f.d;
+    try{ const sized = await sizeFromModel(modelUrl, f.w, f.d); w = sized.w; d = sized.d; }
+    catch(e){ /* 실패하면 기본 크기로 */ }
+    addItem({ ...f, w, d }, { downloadUrl: modelUrl, thumb, title: f.name });
+  }
 
   // ---------- helpers ----------
   function shade(hex, percent){
@@ -1398,7 +1430,8 @@
       <div class="name">${f.name}</div>
       <div class="dim">${f.w}×${f.d}</div>`;
     card.addEventListener('click', ()=>{
-      if(SEARCH_KEYWORD[f.key]) openCategorySearch(f);
+      if(KENNEY_ASSET[f.key]) addKenneyItem(f); // 실제 매칭된 2D+3D 세트로 바로 추가
+      else if(SEARCH_KEYWORD[f.key]) openCategorySearch(f);
       else addItem(f); // 문/창문은 바로 추가 (자체 도형·스윙 기능 유지)
     });
     grid.appendChild(card);
@@ -1638,16 +1671,23 @@
       iconWrap.style.height = (it.d*PPCM)+'px';
       iconWrap.style.transform = `translate(-50%,-50%) rotate(${it.rot}deg)`;
       iconWrap.innerHTML = iconSVG(it.key, it.w, it.d, it.color, it.flip);
-      if(it.thumbnailUrl){
-        const badge = document.createElement('img');
-        badge.src = it.thumbnailUrl;
-        badge.className = 'item-thumb-badge';
-        badge.title = '실제 3D 모델 적용됨';
-        badge.style.transform = `rotate(${-it.rot}deg)`; // 가구가 회전해도 사진은 항상 똑바로
-        badge.addEventListener('error', ()=> badge.remove());
-        iconWrap.appendChild(badge);
-      }
       el.appendChild(iconWrap);
+
+      if(it.thumbnailUrl){
+        // 실제 사진/모델이 있으면 도형 대신 사진을 크게 보여줘요. 회전은 안 시켜서
+        // (늘어나거나 이상하게 안 보이게) 항상 똑바로, 비율도 안 찌그러지게 contain으로.
+        const photo = document.createElement('img');
+        photo.src = it.thumbnailUrl;
+        photo.className = 'item-real-photo';
+        photo.title = it.name + ' (실제 이미지)';
+        photo.addEventListener('error', ()=> photo.remove());
+        el.appendChild(photo);
+
+        const dot = document.createElement('div');
+        dot.className = 'item-real-badge';
+        dot.title = '실제 이미지 적용됨';
+        el.appendChild(dot);
+      }
 
       const label = document.createElement('span');
       label.className = 'item-label';
