@@ -40,7 +40,10 @@ export default async function handler(req, res) {
   try {
     const token = await getEbayToken(appId, certId);
     const url = 'https://api.ebay.com/buy/browse/v1/item_summary/search'
-      + '?q=' + encodeURIComponent(query) + '&limit=12';
+      + '?q=' + encodeURIComponent(query)
+      + '&category_ids=3197' // eBay 공식 "Home & Garden: Furniture" 카테고리 — 상관없는 상품(가죽 염색약, 폼 시트 등) 걸러내려고
+      + '&filter=' + encodeURIComponent('buyingOptions:{FIXED_PRICE}') // 경매 말고 바로 구매 가능한 것만
+      + '&limit=12';
     const upstream = await fetch(url, {
       headers: {
         'Authorization': 'Bearer ' + token,
