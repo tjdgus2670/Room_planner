@@ -337,8 +337,42 @@
     border-radius:var(--radius);
     box-shadow:0 10px 30px rgba(22,50,79,0.06);
     padding:34px 20px 20px 40px;
-    max-width:100%;
+    width:100%;
+    max-width:900px;
     overflow:auto;
+  }
+  .zoom-controls{
+    position:absolute;
+    right:10px;
+    bottom:10px;
+    display:flex;
+    gap:4px;
+    background:var(--white);
+    border:1px solid var(--paper-line);
+    border-radius:8px;
+    padding:3px;
+    box-shadow:0 4px 12px rgba(16,24,38,0.10);
+    z-index:5;
+  }
+  .zoom-controls button{
+    width:26px;height:26px;
+    border:none;
+    background:transparent;
+    border-radius:5px;
+    cursor:pointer;
+    font-size:13px;
+    color:var(--ink);
+  }
+  .zoom-controls button:hover{ background:var(--paper); }
+  .zoom-controls .zoom-pct{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    color:var(--ink-soft);
+    display:flex;
+    align-items:center;
+    padding:0 4px;
+    min-width:34px;
+    justify-content:center;
   }
   .room{
     position:relative;
@@ -828,6 +862,12 @@
       <div class="room" id="room">
         <div class="empty-hint" id="emptyHint">왼쪽에서 가구를 클릭해 방 안에 놓아보세요.<br>드래그로 위치를 옮기고, 선택 후 회전·삭제할 수 있어요.</div>
       </div>
+      <div class="zoom-controls">
+        <button id="zoomOutBtn" title="축소">−</button>
+        <span class="zoom-pct" id="zoomPct">100%</span>
+        <button id="zoomInBtn" title="확대">+</button>
+        <button id="zoomFitBtn" title="화면에 맞추기">⤢</button>
+      </div>
     </div>
 
     <div class="view3d-wrap" id="view3d" style="display:none;">
@@ -997,7 +1037,30 @@
     setTimeout(()=> location.reload(), 500);
   });
 
-  const PPCM = 1.05; // pixels per cm (2D)
+  let PPCM = 1.05; // pixels per cm (2D) — 방 크기/화면에 맞춰 매 렌더마다 재계산돼요
+  let zoomFactor = 1; // 사용자가 +/-로 조절하는 배율 (맞춤 기준 1.0)
+  const canvasWrapEl = document.getElementById('view2d');
+  function updatePPCM(){
+    const availW = Math.max(200, canvasWrapEl.clientWidth - 80);
+    const availH = Math.max(240, window.innerHeight - 260);
+    const fitScale = Math.min(availW/room.w, availH/room.d);
+    PPCM = clamp(fitScale, 0.25, 3) * zoomFactor;
+    const zoomPctEl = document.getElementById('zoomPct');
+    if(zoomPctEl) zoomPctEl.textContent = Math.round(zoomFactor*100)+'%';
+  }
+  document.getElementById('zoomInBtn').addEventListener('click', ()=>{
+    zoomFactor = clamp(zoomFactor+0.15, 0.3, 3);
+    render();
+  });
+  document.getElementById('zoomOutBtn').addEventListener('click', ()=>{
+    zoomFactor = clamp(zoomFactor-0.15, 0.3, 3);
+    render();
+  });
+  document.getElementById('zoomFitBtn').addEventListener('click', ()=>{
+    zoomFactor = 1;
+    render();
+  });
+  window.addEventListener('resize', ()=>{ if(mode==='2d') render(); });
 
   const FURNITURE_TYPES = [
     { key:'door',    name:'문',        w:90,  d:10,  color:'#8A5A34' },
@@ -1530,6 +1593,7 @@
 
   // ---------- 2D render ----------
   function render(){
+    updatePPCM();
     const pw = room.w * PPCM;
     const pd = room.d * PPCM;
     roomEl.style.width = pw+'px';
