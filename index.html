@@ -749,6 +749,13 @@
     padding-top:12px;
     border-top:1px solid var(--paper-line);
   }
+  .pick-summary{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    color:var(--ink-soft);
+    margin-bottom:8px;
+    text-align:center;
+  }
 </style>
 </head>
 <body>
@@ -907,6 +914,7 @@
     </div>
 
     <div class="modal-footer">
+      <div class="pick-summary" id="pickSummary">3D 모델: 선택 안 함 · 실물 사진: 선택 안 함</div>
       <button class="btn primary" id="categoryAddDone">이 상태로 방에 추가</button>
       <button class="btn" id="categoryUsePlaceholder">기본 도형으로 추가 (사진/모델 없이)</button>
     </div>
@@ -2318,6 +2326,11 @@
   let pendingModel = null; // {downloadUrl, thumb, title}
   let pendingPhoto = null; // {thumb, buyLink, price, mallName, title}
 
+  function updatePickSummary(){
+    const el = document.getElementById('pickSummary');
+    el.textContent = `3D 모델: ${pendingModel ? '선택됨 ✓' : '선택 안 함'} · 실물 사진: ${pendingPhoto ? '선택됨 ✓' : '선택 안 함'}`;
+  }
+
   modalTab3d.addEventListener('click', ()=>{
     modalTab3d.classList.add('active'); modalTabPhoto.classList.remove('active');
     modalPane3d.style.display=''; modalPanePhoto.style.display='none';
@@ -2339,6 +2352,7 @@
     pendingModel = null;
     pendingPhoto = null;
     photoPickedDot.style.display = 'none';
+    updatePickSummary();
     document.getElementById('categorySearchTitle').textContent = f.name + ' 검색';
     categorySearchInput.value = SEARCH_KEYWORD[f.key] || f.name;
     photoSearchInput.value = SEARCH_KEYWORD[f.key] || f.name; // eBay는 해외 사이트라 영어 검색어가 훨씬 잘 맞아요
@@ -2356,6 +2370,7 @@
   function runCategory3dSearch(q){
     runModelSearch(q, categoryModelResultsEl, (picked, cardEl)=>{
       pendingModel = picked;
+      updatePickSummary();
       markPicked(categoryModelResultsEl, cardEl);
     });
   }
@@ -2370,6 +2385,7 @@
   function runPhotoSearch(q){
     runShoppingSearch(q, photoResultsEl, (picked, cardEl)=>{
       pendingPhoto = picked;
+      updatePickSummary();
       photoPickedDot.style.display = '';
       markPicked(photoResultsEl, cardEl);
     });
@@ -2604,8 +2620,12 @@
       }
     }
 
-    const posX = (it.x + it.w/2 - room.w/2)/100;
-    const posZ = (it.y + it.d/2 - room.d/2)/100;
+    // it.x/it.y는 회전을 반영한 바운딩박스(AABB)의 좌상단이라, 중심 좌표도
+    // 반드시 AABB 기준으로 계산해야 해요 (90도 회전된 문/창문 등이 벽에서
+    // 떨어져 보이던 버그가 바로 이거였어요 — 회전 전 크기로 계산했었어요).
+    const posBox = getAABB(it.w, it.d, it.rot);
+    const posX = (it.x + posBox.w/2 - room.w/2)/100;
+    const posZ = (it.y + posBox.h/2 - room.d/2)/100;
     g.position.set(posX,0,posZ);
     g.rotation.y = -it.rot*Math.PI/180;
     return g;
