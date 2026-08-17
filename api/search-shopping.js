@@ -9,7 +9,7 @@ let cachedTokenExpiry = 0;
 
 async function getEbayToken(appId, certId) {
   if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
-  const basic = Buffer.from(appId + ':' + certId).toString('base64');
+  const basic = btoa(appId + ':' + certId); // Buffer 대신 어디서든 되는 btoa로
   const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
     method: 'POST',
     headers: {
@@ -75,6 +75,7 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
     return res.status(200).json({ items });
   } catch (e) {
-    return res.status(502).json({ error: 'eBay 요청 실패', detail: String(e) });
+    console.error('search-shopping error:', e); // Vercel Logs 탭에도 남게
+    return res.status(502).json({ error: 'eBay 요청 실패', detail: String(e && e.stack || e) });
   }
 }
