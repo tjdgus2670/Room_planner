@@ -240,7 +240,7 @@
 
   @media print{
     .sidebar, .topbar .tabs, #toastWrap, #view3d, .toolbar-float,
-    .resize-handle, .rotate-handle, .rotate-stem, .size-badge, .userbar{ display:none !important; }
+    .resize-handle, .rotate-handle, .rotate-stem, .size-badge, .userbar, .zoom-controls{ display:none !important; }
     body{ background:var(--white); }
     .main{ padding:0; }
     .canvas-wrap{ box-shadow:none; border:none; }
@@ -1446,8 +1446,17 @@
   function addItem(f, picked, photo){
     pushHistory();
     const id = genId();
-    const spot = findFreeSpot(f.w, f.d);
-    const newItem = { id, key:f.key, name:f.name, x:spot.x, y:spot.y, w:f.w, d:f.d, rot:0, color:f.color };
+    let x, y, rot = 0;
+    if(f.key==='door' || f.key==='window'){
+      // 문/창문은 방 한가운데가 아니라 처음부터 벽(윗벽 중앙)에 붙여서 시작해요
+      const box = getAABB(f.w, f.d, 0);
+      x = Math.round((room.w-box.w)/2/10)*10;
+      y = -box.h;
+    } else {
+      const spot = findFreeSpot(f.w, f.d);
+      x = spot.x; y = spot.y;
+    }
+    const newItem = { id, key:f.key, name:f.name, x, y, w:f.w, d:f.d, rot, color:f.color };
     if(picked){ newItem.modelUrl = picked.downloadUrl; if(!photo) newItem.thumbnailUrl = picked.thumb; }
     if(photo){
       newItem.thumbnailUrl = photo.thumb;
@@ -1749,6 +1758,15 @@
     const oldBox = getAABB(it.w, it.d, it.rot);
     const cxCm = it.x + oldBox.w/2, cyCm = it.y + oldBox.h/2;
     it.rot = ((newRot%360)+360)%360;
+
+    if(isWallFixture(it)){
+      // 회전해도 벽에서 떨어지지 않게, 회전 후 중심 기준으로 다시 가장 가까운 벽에 붙여요
+      const newBox = getAABB(it.w, it.d, it.rot);
+      const c = constrainToWall(it, cxCm-newBox.w/2, cyCm-newBox.h/2);
+      it.x = c.x; it.y = c.y; it.rot = c.rot;
+      return;
+    }
+
     const newBox = getAABB(it.w, it.d, it.rot);
     const m = wallMargin(it);
     let nx = cxCm - newBox.w/2, ny = cyCm - newBox.h/2;
@@ -1938,6 +1956,31 @@
     document.addEventListener('pointerup', onDragEnd);
   }
 
+  function isWallFixture(it){ return it.key==='door' || it.key==='window'; }
+
+  function constrainToWall(it, rawX, rawY){
+    const curBox = getAABB(it.w, it.d, it.rot);
+    const cx = rawX + curBox.w/2, cy = rawY + curBox.h/2;
+    const distTop = cy, distBottom = room.d-cy, distLeft = cx, distRight = room.w-cx;
+    const minDist = Math.min(distTop, distBottom, distLeft, distRight);
+    const axis = minDist===distTop ? 'top' : minDist===distBottom ? 'bottom' : minDist===distLeft ? 'left' : 'right';
+    const wantHorizontal = (axis==='top' || axis==='bottom'); // 가로 벽이면 폭이 가로로 놓여야 함
+    const candidates = wantHorizontal ? [0,180] : [90,270];
+    // 현재 회전에서 가장 가까운 후보로 스냅 (불필요하게 180도 홱 돌지 않도록)
+    const targetRot = candidates.reduce((best,c)=>{
+      const d = Math.min(Math.abs(it.rot-c), 360-Math.abs(it.rot-c));
+      const bd = Math.min(Math.abs(it.rot-best), 360-Math.abs(it.rot-best));
+      return d<bd ? c : best;
+    }, candidates[0]);
+    const box = getAABB(it.w, it.d, targetRot);
+    let x, y;
+    if(axis==='top'){ y = -box.h; x = clamp(cx-box.w/2, 0, room.w-box.w); }
+    else if(axis==='bottom'){ y = room.d; x = clamp(cx-box.w/2, 0, room.w-box.w); }
+    else if(axis==='left'){ x = -box.w; y = clamp(cy-box.h/2, 0, room.d-box.h); }
+    else { x = room.w; y = clamp(cy-box.h/2, 0, room.d-box.h); }
+    return { x, y, rot: targetRot, w: box.w, h: box.h };
+  }
+
   function onDragMove(e){
     if(!dragCtx) return;
     const it = items.find(i=>i.id===dragCtx.id);
@@ -1947,6 +1990,17 @@
     let xCm = (e.clientX - roomRect.left - dragCtx.offsetX) / PPCM;
     let yCm = (e.clientY - roomRect.top - dragCtx.offsetY) / PPCM;
     if(snap){ xCm = Math.round(xCm/10)*10; yCm = Math.round(yCm/10)*10; }
+
+    if(isWallFixture(it)){
+      // 문/창문은 항상 가장 가까운 벽에 붙어서 그 벽을 따라서만 미끄러지듯 이동해요
+      const c = constrainToWall(it, xCm, yCm);
+      if(!collidesWithOthers(it, c.x, c.y, c.w, c.h)){
+        it.x = c.x; it.y = c.y; it.rot = c.rot;
+      }
+      render();
+      return;
+    }
+
     const box = getAABB(it.w, it.d, it.rot);
     const m = wallMargin(it);
     xCm = clamp(xCm, -m, room.w - box.w + m);
