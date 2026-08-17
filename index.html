@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="방 배치를 2D와 3D로 미리 그려보는 무료 인테리어 시뮬레이터">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23101826'/%3E%3Crect x='22' y='22' width='56' height='56' fill='none' stroke='%23AD8A4E' stroke-width='6'/%3E%3Crect x='34' y='34' width='20' height='20' fill='%23AD8A4E'/%3E%3C/svg%3E">
 <title>도면 위에 — 방 배치 플래너</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -11,16 +13,16 @@
   @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
 
   :root{
-    --paper:#F7F4EC;
-    --paper-line:#DCD5C3;
-    --ink:#1C2B3A;
-    --ink-soft:#5B6B78;
-    --blue:#2E6E9E;
-    --blue-deep:#16324F;
-    --wood:#C08552;
-    --red:#B5533C;
+    --paper:#F1F2F4;
+    --paper-line:#DFE2E7;
+    --ink:#12181F;
+    --ink-soft:#667085;
+    --blue:#2C4A6E;
+    --blue-deep:#101826;
+    --wood:#AD8A4E;
+    --red:#B14538;
     --white:#FFFFFF;
-    --radius:10px;
+    --radius:12px;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -45,6 +47,7 @@
   .sidebar{
     background:var(--white);
     border-right:1px solid var(--paper-line);
+    box-shadow:1px 0 0 rgba(16,24,38,0.02), 4px 0 24px rgba(16,24,38,0.04);
     padding:22px 18px 40px;
     height:100vh;
     position:sticky;
@@ -156,6 +159,23 @@
     font-size:12.5px;
     margin-bottom:10px;
   }
+  .wall-swatch-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:6px;
+  }
+  .wall-swatch{
+    width:28px;height:28px;
+    border-radius:50%;
+    cursor:pointer;
+    border:2px solid var(--paper-line);
+    box-shadow:inset 0 0 0 2px var(--white);
+  }
+  .wall-swatch.active{
+    border-color:var(--blue-deep);
+    box-shadow:inset 0 0 0 2px var(--white), 0 0 0 2px var(--blue-deep);
+  }
   .switch{
     position:relative;
     width:34px;height:19px;
@@ -207,6 +227,23 @@
     color:var(--ink-soft);
     min-height:14px;
     margin-top:2px;
+  }
+  .shortcut-hint{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:9.5px;
+    color:var(--ink-soft);
+    line-height:1.5;
+    margin-top:14px;
+    padding-top:12px;
+    border-top:1px solid var(--paper-line);
+  }
+
+  @media print{
+    .sidebar, .topbar .tabs, #toastWrap, #view3d, .toolbar-float,
+    .resize-handle, .rotate-handle, .rotate-stem, .size-badge, .userbar{ display:none !important; }
+    body{ background:var(--white); }
+    .main{ padding:0; }
+    .canvas-wrap{ box-shadow:none; border:none; }
   }
 
   /* ---------- Toast notifications ---------- */
@@ -487,8 +524,44 @@
     display:flex;
     align-items:center;
     justify-content:center;
-    background:var(--paper);
+    gap:64px;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(173,138,78,0.10), transparent 45%),
+      var(--paper);
     padding:20px;
+    flex-wrap:wrap;
+  }
+  .auth-intro{
+    max-width:340px;
+  }
+  .auth-intro .brand{ margin:0 0 14px; }
+  .intro-line{
+    font-size:16px;
+    line-height:1.55;
+    color:var(--ink);
+    margin:0 0 22px;
+  }
+  .intro-features{
+    list-style:none;
+    padding:0;
+    margin:0;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .intro-features li{
+    font-size:13px;
+    color:var(--ink-soft);
+    padding-left:22px;
+    position:relative;
+  }
+  .intro-features li::before{
+    content:'';
+    position:absolute;
+    left:0; top:6px;
+    width:10px; height:10px;
+    border-radius:3px;
+    background:var(--wood);
   }
   .auth-card{
     width:100%;
@@ -497,7 +570,7 @@
     border:1px solid var(--paper-line);
     border-radius:14px;
     padding:28px 26px;
-    box-shadow:0 14px 34px rgba(22,50,79,0.08);
+    box-shadow:0 14px 34px rgba(16,24,38,0.10);
   }
   .auth-card .field{ margin-bottom:14px; }
   .auth-card input[type=email], .auth-card input[type=password]{
@@ -649,6 +722,15 @@
 <div id="toastWrap"></div>
 
 <div id="authScreen" style="display:none;">
+  <div class="auth-intro">
+    <p class="brand" style="font-size:22px;">도면 위에</p>
+    <p class="intro-line">방 크기부터 가구 배치까지, 2D 평면도와 3D로 미리 그려보세요.</p>
+    <ul class="intro-features">
+      <li>가구를 끌어다 놓고 회전·크기 조절</li>
+      <li>실제 판매 중인 가구 검색해서 그대로 배치</li>
+      <li>계정에 저장해서 어디서든 이어서 작업</li>
+    </ul>
+  </div>
   <div class="auth-card">
     <p class="brand" style="text-align:center;">도면 위에</p>
     <p class="brand-sub" style="text-align:center;">로그인하고 내 방 배치를 저장하세요</p>
@@ -689,7 +771,11 @@
       <button class="switch" id="snapToggle" data-on="true"></button>
     </div>
 
+    <div class="section-label">벽 색상 (3D)</div>
+    <div class="wall-swatch-row" id="wallSwatches"></div>
+
     <div class="section-label">가구 추가 (클릭)</div>
+    <input type="text" id="furnitureSearch" placeholder="가구 검색... (예: 침대)" style="width:100%;padding:8px 10px;border:1px solid var(--paper-line);border-radius:8px;font-size:12.5px;margin-bottom:10px;background:var(--paper);">
     <div class="furniture-grid" id="furnitureGrid"></div>
 
     <div class="section-label" id="selectedLabel" style="display:none;">선택한 가구</div>
@@ -716,8 +802,10 @@
     <div class="section-label">저장</div>
     <button class="btn primary" id="saveBtn">이 배치 저장하기</button>
     <button class="btn" id="loadBtn">저장된 배치 불러오기</button>
+    <button class="btn" id="exportBtn">평면도 내보내기 (인쇄/PDF)</button>
     <button class="btn danger" id="clearBtn">전체 지우기</button>
     <div class="status" id="statusMsg"></div>
+    <div class="shortcut-hint">Delete 삭제 · Ctrl+Z 되돌리기 · Ctrl+Shift+Z 다시실행 · Esc 선택해제</div>
   </aside>
 
   <main class="main">
@@ -926,7 +1014,16 @@
     { key:'shelf',   name:'책장',      w:80,  d:30,  color:'#6E8B74' },
     { key:'plant',   name:'화분',      w:40,  d:40,  color:'#5D8A5A' },
     { key:'rug',     name:'러그',      w:180, d:120, color:'#C99A6E' },
-    { key:'fridge',  name:'냉장고',    w:70,  d:70,  color:'#8A97A3' }
+    { key:'fridge',  name:'냉장고',    w:70,  d:70,  color:'#8A97A3' },
+    // ---- 소품 ----
+    { key:'monitor', name:'모니터',    w:60,  d:15,  color:'#333B44' },
+    { key:'nightstand', name:'협탁',   w:45,  d:40,  color:'#A9754F' },
+    { key:'floorlamp', name:'스탠드조명', w:30, d:30, color:'#D8B26A' },
+    { key:'frame',   name:'액자',      w:40,  d:4,   color:'#7C5B3E' },
+    { key:'cushion', name:'쿠션',      w:45,  d:45,  color:'#C97B84' },
+    { key:'trash',   name:'휴지통',    w:25,  d:25,  color:'#8A97A3' },
+    { key:'speaker', name:'스피커',    w:20,  d:20,  color:'#404A54' },
+    { key:'rack',    name:'행거',      w:70,  d:45,  color:'#6B7684' }
   ];
   const TYPE_MAP = {};
   FURNITURE_TYPES.forEach(f=> TYPE_MAP[f.key]=f);
@@ -936,7 +1033,10 @@
   const SEARCH_KEYWORD = {
     bed_d:'bed', bed_s:'bed', sofa:'sofa', table:'dining table', desk:'desk',
     chair:'chair', wardrobe:'wardrobe', built_wardrobe:'wardrobe', tv:'tv stand',
-    shelf:'bookshelf', plant:'plant', rug:'rug', fridge:'refrigerator'
+    shelf:'bookshelf', plant:'plant', rug:'rug', fridge:'refrigerator',
+    monitor:'monitor', nightstand:'nightstand', floorlamp:'floor lamp',
+    frame:'picture frame', cushion:'cushion', trash:'trash can',
+    speaker:'speaker', rack:'clothing rack'
   };
 
   // ---------- helpers ----------
@@ -1081,13 +1181,55 @@
           <rect x="1" y="1" width="${w-2}" height="${d-2}" rx="4" fill="${color}"/>
           <rect x="${w-10}" y="${d*0.2}" width="3" height="${d*0.25}" fill="${dark}"/>
         </svg>`;
+      case 'monitor':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="${w-2}" height="${d*0.55}" rx="3" fill="${color}"/>
+          <rect x="${w*0.42}" y="${d*0.6}" width="${w*0.16}" height="${d*0.35}" fill="${dark}"/>
+        </svg>`;
+      case 'nightstand':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="${w-2}" height="${d-2}" rx="3" fill="${color}"/>
+          <line x1="1" y1="${d*0.5}" x2="${w-1}" y2="${d*0.5}" stroke="${dark}" stroke-width="1" opacity="0.6"/>
+          <circle cx="${w/2}" cy="${d*0.25}" r="1.6" fill="${dark}"/>
+        </svg>`;
+      case 'floorlamp':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="${w/2}" cy="${d/2}" r="${Math.min(w,d)/2-1}" fill="${light}"/>
+          <circle cx="${w/2}" cy="${d/2}" r="2.2" fill="${dark}"/>
+        </svg>`;
+      case 'frame':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="${w-2}" height="${d-2}" fill="${color}"/>
+        </svg>`;
+      case 'cushion':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="${w-4}" height="${d-4}" rx="8" fill="${color}"/>
+          <line x1="4" y1="4" x2="${w-4}" y2="${d-4}" stroke="${dark}" stroke-width="1" opacity="0.4"/>
+          <line x1="${w-4}" y1="4" x2="4" y2="${d-4}" stroke="${dark}" stroke-width="1" opacity="0.4"/>
+        </svg>`;
+      case 'trash':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="${w/2}" cy="${d/2}" r="${Math.min(w,d)/2-1}" fill="${color}"/>
+          <circle cx="${w/2}" cy="${d/2}" r="${Math.min(w,d)/2-6}" fill="${dark}" opacity="0.5"/>
+        </svg>`;
+      case 'speaker':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="${w-2}" height="${d-2}" rx="3" fill="${color}"/>
+          <circle cx="${w/2}" cy="${d/2}" r="${Math.min(w,d)/2-4}" fill="${dark}"/>
+        </svg>`;
+      case 'rack':
+        return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="${w-2}" height="${d-2}" rx="2" fill="${color}" opacity="0.85"/>
+          <line x1="1" y1="${d/2}" x2="${w-1}" y2="${d/2}" stroke="${dark}" stroke-width="1.4"/>
+          ${[0.15,0.38,0.62,0.85].map(f=>`<line x1="${w*f}" y1="1" x2="${w*f}" y2="${d-1}" stroke="${dark}" stroke-width="1" opacity="0.5"/>`).join('')}
+        </svg>`;
       default:
         return `<svg viewBox="0 0 ${w} ${d}" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="${w-2}" height="${d-2}" fill="${color}"/></svg>`;
     }
   }
 
   // ---------- state ----------
-  let room = { w:300, d:350 };
+  let room = { w:300, d:350, wallColor:'#F3EFE3' };
   let snap = true;
   let items = []; // {id, key, name, x, y, w, d, rot, color}
   let selectedId = null;
@@ -1098,37 +1240,72 @@
   }
   let mode = '2d';
 
-  // ---------- undo (Ctrl+Z) ----------
+  // ---------- undo/redo (Ctrl+Z / Ctrl+Shift+Z) ----------
   let history = [];
+  let redoStack = [];
   const MAX_HISTORY = 50;
   let emptyUndoNotified = false;
+  let emptyRedoNotified = false;
   function pushHistory(){
     history.push(JSON.stringify({ room, items }));
     if(history.length>MAX_HISTORY) history.shift();
+    redoStack = []; // 새로 뭔가 바꾸면 다시하기 목록은 무효화돼요
     emptyUndoNotified = false;
+    emptyRedoNotified = false;
+  }
+  function applyState(s){
+    room = s.room; items = s.items;
+    document.getElementById('roomW').value = room.w;
+    document.getElementById('roomD').value = room.d;
+    document.getElementById('roomMeta').textContent = `${room.w} × ${room.d} cm`;
+    renderWallSwatches();
+    selectedId = null;
+    render();
+    if(mode==='3d') build3D();
   }
   function undo(){
     if(history.length===0){
       if(!emptyUndoNotified){ showToast('더 되돌릴 게 없어요.', 'info'); emptyUndoNotified = true; }
       return;
     }
-    const prev = JSON.parse(history.pop());
-    room = prev.room;
-    items = prev.items;
-    document.getElementById('roomW').value = room.w;
-    document.getElementById('roomD').value = room.d;
-    document.getElementById('roomMeta').textContent = `${room.w} × ${room.d} cm`;
-    selectedId = null;
-    render();
-    if(mode==='3d') build3D();
+    redoStack.push(JSON.stringify({ room, items }));
+    applyState(JSON.parse(history.pop()));
     showToast('되돌렸어요.', 'info');
+  }
+  function redo(){
+    if(redoStack.length===0){
+      if(!emptyRedoNotified){ showToast('다시 실행할 게 없어요.', 'info'); emptyRedoNotified = true; }
+      return;
+    }
+    history.push(JSON.stringify({ room, items }));
+    applyState(JSON.parse(redoStack.pop()));
+    showToast('다시 실행했어요.', 'info');
   }
   document.addEventListener('keydown', (e)=>{
     const tag = document.activeElement && document.activeElement.tagName;
-    if(tag==='INPUT' || tag==='TEXTAREA') return; // 텍스트 입력 중엔 브라우저 기본 되돌리기 우선
+    if(tag==='INPUT' || tag==='TEXTAREA') return; // 텍스트 입력 중엔 브라우저 기본 동작 우선
     if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){
       e.preventDefault();
-      undo();
+      if(e.shiftKey) redo(); else undo();
+      return;
+    }
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='y'){
+      e.preventDefault();
+      redo();
+      return;
+    }
+    if((e.key==='Delete' || e.key==='Backspace') && selectedId){
+      e.preventDefault();
+      pushHistory();
+      items = items.filter(i=>i.id!==selectedId);
+      selectedId = null;
+      render();
+      if(mode==='3d') build3D();
+      return;
+    }
+    if(e.key==='Escape'){
+      if(categoryModal && categoryModal.style.display!=='none'){ closeCategoryModal(); return; }
+      if(selectedId){ selectedId=null; render(); return; }
     }
   });
 
@@ -1145,6 +1322,7 @@
   FURNITURE_TYPES.forEach(f=>{
     const card = document.createElement('div');
     card.className = 'furniture-card';
+    card.dataset.name = f.name;
     card.innerHTML = `<div class="icon">${iconSVG(f.key,f.w,f.d,f.color)}</div>
       <div class="name">${f.name}</div>
       <div class="dim">${f.w}×${f.d}</div>`;
@@ -1154,6 +1332,34 @@
     });
     grid.appendChild(card);
   });
+  document.getElementById('furnitureSearch').addEventListener('input', (e)=>{
+    const q = e.target.value.trim();
+    grid.querySelectorAll('.furniture-card').forEach(card=>{
+      card.style.display = card.dataset.name.includes(q) ? '' : 'none';
+    });
+  });
+
+  // Build wall color swatches (3D 벽 색상 — 흰색/베이지/그레이/민트/핑크/네이비/우드)
+  const WALL_COLORS = ['#F3EFE3','#FFFFFF','#D8D2C4','#B9C6BE','#E7C9C9','#2E3A4E','#C9A987'];
+  const wallSwatchesEl = document.getElementById('wallSwatches');
+  function renderWallSwatches(){
+    wallSwatchesEl.innerHTML = '';
+    WALL_COLORS.forEach(c=>{
+      const sw = document.createElement('div');
+      sw.className = 'wall-swatch' + (room.wallColor===c ? ' active' : '');
+      sw.style.background = c;
+      sw.title = c;
+      sw.addEventListener('click', ()=>{
+        if(room.wallColor===c) return;
+        pushHistory();
+        room.wallColor = c;
+        renderWallSwatches();
+        if(mode==='3d') build3D();
+      });
+      wallSwatchesEl.appendChild(sw);
+    });
+  }
+  renderWallSwatches();
 
   function findFreeSpot(w, d){
     const cx = Math.max(0, Math.round((room.w - w)/2/10)*10);
@@ -1209,6 +1415,11 @@
     snapToggle.setAttribute('data-on', snap);
   });
 
+  document.getElementById('exportBtn').addEventListener('click', ()=>{
+    tab2d.click(); // 인쇄는 2D 평면도 기준으로
+    setTimeout(()=> window.print(), 150);
+  });
+
   document.getElementById('clearBtn').addEventListener('click', ()=>{
     if(items.length===0) return;
     pushHistory();
@@ -1261,10 +1472,12 @@
       if(error) throw error;
       if(data){
         room = data.room || room;
+        if(!room.wallColor) room.wallColor = '#F3EFE3'; // 예전에 저장된 데이터엔 벽 색상 필드가 없을 수 있어요
         items = data.items || [];
         document.getElementById('roomW').value = room.w;
         document.getElementById('roomD').value = room.d;
         document.getElementById('roomMeta').textContent = `${room.w} × ${room.d} cm`;
+        renderWallSwatches();
         selectedId = null;
         render();
         if(mode==='3d') build3D();
@@ -2219,6 +2432,53 @@
         const handle = mkBox(0.03,0.5,0.03,dark); handle.position.set(w/2-0.06,1.1,d/2+0.02); g.add(handle);
         break;
       }
+      case 'monitor': {
+        const standBase = mkBox(w*0.3,0.02,d*0.6,dark); standBase.position.y=0.01; g.add(standBase);
+        const neck = mkBox(0.03,0.18,0.03,dark); neck.position.y=0.1; g.add(neck);
+        const screen = mkBox(w*0.85,0.4,0.03,color); screen.position.set(0,0.38,-d*0.15); g.add(screen);
+        break;
+      }
+      case 'nightstand': {
+        const body = mkBox(w,0.55,d,color); body.position.y=0.275; g.add(body);
+        const knob = mkBox(0.03,0.03,0.02,dark); knob.position.set(0,0.3,d/2+0.01); g.add(knob);
+        break;
+      }
+      case 'floorlamp': {
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(w*0.4,w*0.45,0.03,16), new THREE.MeshStandardMaterial({color:dark}));
+        base.position.y=0.015; g.add(base);
+        const pole = mkBox(0.025,1.3,0.025,dark); pole.position.y=0.66; g.add(pole);
+        const shade = new THREE.Mesh(new THREE.CylinderGeometry(w*0.35,w*0.22,0.28,16), new THREE.MeshStandardMaterial({color, opacity:0.9, transparent:true}));
+        shade.position.y=1.45; g.add(shade);
+        break;
+      }
+      case 'frame': {
+        const frame = mkBox(w,d*8,0.03,dark); frame.position.y=1.4; g.add(frame);
+        const art = mkBox(w*0.85,d*6.5,0.01,color); art.position.set(0,1.4,0.02); g.add(art);
+        break;
+      }
+      case 'cushion': {
+        const c = new THREE.Mesh(new THREE.SphereGeometry(w*0.42,10,8), new THREE.MeshStandardMaterial({color}));
+        c.scale.set(1,0.45,1); c.position.y=w*0.18; g.add(c);
+        break;
+      }
+      case 'trash': {
+        const bin = new THREE.Mesh(new THREE.CylinderGeometry(w*0.42,w*0.34,0.3,14), new THREE.MeshStandardMaterial({color}));
+        bin.position.y=0.15; g.add(bin);
+        break;
+      }
+      case 'speaker': {
+        const body = mkBox(w,0.32,d,color); body.position.y=0.16; g.add(body);
+        const cone = new THREE.Mesh(new THREE.CylinderGeometry(w*0.3,w*0.3,0.02,12), new THREE.MeshStandardMaterial({color:dark}));
+        cone.rotation.x=Math.PI/2; cone.position.set(0,0.16,d/2+0.01); g.add(cone);
+        break;
+      }
+      case 'rack': {
+        const legPositions = [[-w/2+0.03,-d/2+0.03],[w/2-0.03,-d/2+0.03],[-w/2+0.03,d/2-0.03],[w/2-0.03,d/2-0.03]];
+        legPositions.forEach(p=>{ const leg=mkBox(0.03,1.5,0.03,dark); leg.position.set(p[0],0.75,p[1]); g.add(leg); });
+        const bar = mkBox(w,0.03,0.03,dark); bar.position.y=1.5; g.add(bar);
+        [-0.25,0,0.25].forEach(off=>{ const hook=mkBox(0.02,0.12,0.15,color); hook.position.set(w*off,1.4,0); g.add(hook); });
+        break;
+      }
       default: {
         const b = mkBox(w,0.5,d,color); b.position.y=0.25; g.add(b);
       }
@@ -2253,8 +2513,8 @@
     grid3d.position.y = 0.002;
     scene.add(grid3d);
 
-    const wallMatOpaque = { color:0xF3EFE3, opacity:0.92 };
-    const wallMatFaint = { color:0xF3EFE3, opacity:0.08 };
+    const wallMatOpaque = { color:new THREE.Color(room.wallColor||'#F3EFE3'), opacity:0.92 };
+    const wallMatFaint = { color:new THREE.Color(room.wallColor||'#F3EFE3'), opacity:0.08 };
     const wallH = 2.4, wallT = 0.08;
 
     const northWall = mkBox(Wm+wallT, wallH, wallT, wallMatOpaque.color, wallMatOpaque.opacity);
