@@ -2325,6 +2325,8 @@
   modalTabPhoto.addEventListener('click', ()=>{
     modalTabPhoto.classList.add('active'); modalTab3d.classList.remove('active');
     modalPanePhoto.style.display=''; modalPane3d.style.display='none';
+    const q = photoSearchInput.value.trim();
+    if(q) runPhotoSearch(q); // 탭을 열자마자 바로 검색된 상태로 보여줘요
   });
 
   function markPicked(resultsEl, cardEl){

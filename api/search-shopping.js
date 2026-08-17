@@ -1,7 +1,29 @@
 // Vercel 서버리스 함수 — /api/search-shopping
-// eBay Finding API(findItemsByKeywords)를 대신 호출해줘요. App ID는 여기, 그리고
-// Vercel 프로젝트의 Environment Variables 설정에만 있어요. 브라우저로 내려가는
-// 코드(index.html)에는 절대 포함되지 않아요.
+// eBay의 최신 Browse API를 대신 호출해줘요 (구버전 Finding API가 서버발 요청을
+// 계속 차단해서 이걸로 바꿨어요). Browse API는 OAuth 토큰이 필요해서
+// App ID(Client ID) + Cert ID(Client Secret) 둘 다 있어야 해요.
+// 둘 다 여기, 그리고 Vercel 환경변수에만 있어요 — 브라우저로는 절대 안 내려가요.
+
+let cachedToken = null;
+let cachedTokenExpiry = 0;
+
+async function getEbayToken(appId, certId) {
+  if (cachedToken && Date.now() < cachedTokenExpiry) return cachedToken;
+  const basic = Buffer.from(appId + ':' + certId).toString('base64');
+  const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + basic
+    },
+    body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
+  });
+  const data = await res.json();
+  if (!data.access_token) throw new Error('토큰 발급 실패: ' + JSON.stringify(data).slice(0, 300));
+  cachedToken = data.access_token;
+  cachedTokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+  return cachedToken;
+}
 
 export default async function handler(req, res) {
   const query = req.query.q;
@@ -10,31 +32,26 @@ export default async function handler(req, res) {
   }
 
   const appId = process.env.EBAY_APP_ID;
-  if (!appId) {
-    return res.status(500).json({ error: 'EBAY_APP_ID가 Vercel 환경변수에 설정되어 있지 않아요' });
+  const certId = process.env.EBAY_CERT_ID;
+  if (!appId || !certId) {
+    return res.status(500).json({ error: 'EBAY_APP_ID / EBAY_CERT_ID가 Vercel 환경변수에 설정되어 있지 않아요' });
   }
 
   try {
-    const url = 'https://svcs.ebay.com/services/search/FindingService/v1'
-      + '?OPERATION-NAME=findItemsByKeywords'
-      + '&SERVICE-VERSION=1.0.0'
-      + '&SECURITY-APPNAME=' + encodeURIComponent(appId)
-      + '&RESPONSE-DATA-FORMAT=JSON'
-      + '&paginationInput.entriesPerPage=12'
-      + '&keywords=' + encodeURIComponent(query);
+    const token = await getEbayToken(appId, certId);
+    const url = 'https://api.ebay.com/buy/browse/v1/item_summary/search'
+      + '?q=' + encodeURIComponent(query) + '&limit=12';
     const upstream = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'application/json'
+        'Authorization': 'Bearer ' + token,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
       }
     });
     const bodyText = await upstream.text();
 
     let raw;
-    try{ raw = JSON.parse(bodyText); }
-    catch(parseErr){
-      // eBay가 JSON이 아닌 걸(HTML 에러페이지, 빈 응답 등) 줬을 때 원문 그대로 보여줘서
-      // 다음엔 추측 없이 바로 원인을 알 수 있게 해요.
+    try { raw = JSON.parse(bodyText); }
+    catch (parseErr) {
       return res.status(502).json({
         error: 'eBay 응답이 JSON이 아니에요',
         upstreamStatus: upstream.status,
@@ -42,21 +59,16 @@ export default async function handler(req, res) {
       });
     }
 
-    // eBay 에러 응답은 성공 응답이랑 구조가 달라요 (findItemsByKeywordsResponse 대신 errorMessage)
-    if (raw.errorMessage) {
-      return res.status(502).json({ error: 'eBay가 에러를 반환했어요', detail: raw.errorMessage });
+    if (raw.errors) {
+      return res.status(502).json({ error: 'eBay가 에러를 반환했어요', detail: raw.errors });
     }
 
-    // eBay 응답은 중첩이 깊어서(findItemsByKeywordsResponse[0].searchResult[0].item[])
-    // 프런트에서 쓰기 편하게 우리 쪽에서 한번 정리해서 내려줘요.
-    const root = raw.findItemsByKeywordsResponse && raw.findItemsByKeywordsResponse[0];
-    const rawItems = (root && root.searchResult && root.searchResult[0] && root.searchResult[0].item) || [];
-    const items = rawItems.map(it => ({
-      title: it.title && it.title[0],
-      image: it.galleryURL && it.galleryURL[0],
-      link: it.viewItemURL && it.viewItemURL[0],
-      price: it.sellingStatus && it.sellingStatus[0].currentPrice && it.sellingStatus[0].currentPrice[0].__value__,
-      currency: it.sellingStatus && it.sellingStatus[0].currentPrice && it.sellingStatus[0].currentPrice[0]['@currencyId'],
+    const items = (raw.itemSummaries || []).map(it => ({
+      title: it.title,
+      image: it.image && it.image.imageUrl,
+      link: it.itemWebUrl,
+      price: it.price && it.price.value,
+      currency: it.price && it.price.currency,
       mallName: 'eBay'
     }));
 
